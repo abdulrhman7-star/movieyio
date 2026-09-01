@@ -26,7 +26,9 @@ import {
   Home,
   Compass,
   X,
-  SlidersHorizontal
+  SlidersHorizontal,
+  Bookmark,
+  BookmarkCheck
 } from 'lucide-react';
 import PlayerSection, { VideoQuality, SubtitleTrack } from './PlayerSection';
 import EpisodesSidebar from './EpisodesSidebar';
@@ -41,7 +43,7 @@ const clientSearchCache = new Map<string, MediaItem[]>();
 
 export default function AkwamApp() {
   const [view, setView] = useState<'home' | 'search' | 'series' | 'watch'>('home');
-  const [activeNavTab, setActiveNavTab] = useState<'all' | 'movies' | 'series'>('all');
+  const [activeNavTab, setActiveNavTab] = useState<'all' | 'movies' | 'series' | 'watch_later'>('all');
   const [activeCategoryFilter, setActiveCategoryFilter] = useState<string>('all');
   const [query, setQuery] = useState<string>('');
   const [results, setResults] = useState<MediaItem[]>([]);
@@ -70,15 +72,39 @@ export default function AkwamApp() {
   // Watch Progress State
   const [watchProgress, setWatchProgress] = useState<Record<string, number>>({});
 
+  // Watch Later State
+  const [watchLater, setWatchLater] = useState<MediaItem[]>([]);
+
+  // Pagination State
+  const [moviesPage, setMoviesPage] = useState<number>(1);
+  const [seriesPage, setSeriesPage] = useState<number>(1);
+  const [isLoadingMore, setIsLoadingMore] = useState<boolean>(false);
+
   useEffect(() => {
     try {
-      const saved = localStorage.getItem('ak_watch_progress');
-      if (saved) {
+      const savedProgress = localStorage.getItem('ak_watch_progress');
+      if (savedProgress) {
         // eslint-disable-next-line react-hooks/set-state-in-effect
-        setWatchProgress(JSON.parse(saved));
+        setWatchProgress(JSON.parse(savedProgress));
+      }
+      const savedWatchLater = localStorage.getItem('ak_watch_later');
+      if (savedWatchLater) {
+        setWatchLater(JSON.parse(savedWatchLater));
       }
     } catch (e) {}
   }, []);
+
+  const toggleWatchLater = (item: MediaItem, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setWatchLater(prev => {
+      const exists = prev.some(m => m.url === item.url);
+      const next = exists ? prev.filter(m => m.url !== item.url) : [...prev, item];
+      try {
+        localStorage.setItem('ak_watch_later', JSON.stringify(next));
+      } catch (err) {}
+      return next;
+    });
+  };
 
   const handleProgressUpdate = (percentage: number) => {
     if (percentage < 1 || percentage > 100) return;
@@ -183,6 +209,49 @@ export default function AkwamApp() {
       setError('فشل البحث في موقع ak.sv');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Load More handler
+  const handleLoadMore = async () => {
+    setIsLoadingMore(true);
+    setError('');
+    
+    try {
+      const promises: Promise<any>[] = [];
+      let fetchMovies = false;
+      let fetchSeries = false;
+
+      if (activeNavTab === 'all' || activeNavTab === 'movies') {
+        fetchMovies = true;
+        promises.push(fetch(`/api/movies?page=${moviesPage + 1}`).then(res => res.json()));
+      }
+      if (activeNavTab === 'all' || activeNavTab === 'series') {
+        fetchSeries = true;
+        promises.push(fetch(`/api/series?page=${seriesPage + 1}`).then(res => res.json()));
+      }
+
+      const results = await Promise.all(promises);
+      
+      let resIdx = 0;
+      if (fetchMovies) {
+        const moviesRes = results[resIdx++];
+        if (moviesRes.success && moviesRes.data) {
+          setMovies(prev => [...prev, ...moviesRes.data]);
+          setMoviesPage(prev => prev + 1);
+        }
+      }
+      if (fetchSeries) {
+        const seriesRes = results[resIdx++];
+        if (seriesRes.success && seriesRes.data) {
+          setSeries(prev => [...prev, ...seriesRes.data]);
+          setSeriesPage(prev => prev + 1);
+        }
+      }
+    } catch (e) {
+      setError('فشل في جلب المزيد من البيانات');
+    } finally {
+      setIsLoadingMore(false);
     }
   };
 
@@ -297,8 +366,10 @@ export default function AkwamApp() {
       list = [...movies, ...series];
     } else if (activeNavTab === 'movies') {
       list = movies;
-    } else {
+    } else if (activeNavTab === 'series') {
       list = series;
+    } else if (activeNavTab === 'watch_later') {
+      list = watchLater;
     }
 
     if (activeCategoryFilter !== 'all') {
@@ -311,7 +382,7 @@ export default function AkwamApp() {
     }
 
     return list;
-  }, [movies, series, activeNavTab, activeCategoryFilter]);
+  }, [movies, series, watchLater, activeNavTab, activeCategoryFilter]);
 
   return (
     <div className="min-h-screen bg-[#07090e] text-gray-100 flex flex-col font-sans selection:bg-blue-600 selection:text-white" dir="rtl">
@@ -384,6 +455,20 @@ export default function AkwamApp() {
               }`}
             >
               <Tv className="w-3.5 h-3.5" /> المسلسلات
+            </button>
+            <button
+              id="nav-tab-watch-later"
+              onClick={() => {
+                setView('home');
+                setActiveNavTab('watch_later');
+              }}
+              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold transition-all ${
+                view === 'home' && activeNavTab === 'watch_later'
+                  ? 'bg-blue-600 text-white shadow-md'
+                  : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              <Bookmark className="w-3.5 h-3.5" /> قائمة المشاهدة
             </button>
             <button
               id="nav-tab-api"
@@ -733,6 +818,8 @@ export default function AkwamApp() {
                       setIsApiDocsOpen(true);
                     }}
                     progress={watchProgress[item.url]}
+                    isWatchLater={watchLater.some(m => m.url === item.url)}
+                    onToggleWatchLater={(e) => toggleWatchLater(item, e)}
                   />
                 ))}
               </div>
@@ -851,21 +938,47 @@ export default function AkwamApp() {
                 <span className="mt-4 text-xs font-semibold text-gray-400">جاري جلب أحدث الإضافات من ak.sv...</span>
               </div>
             ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 sm:gap-6">
-                {displayedHomeMedia.map((item, idx) => (
-                  <MediaCard
-                    key={`home-media-${item.url}-${idx}`}
-                    item={item}
-                    onClick={() => handleMediaClick(item)}
-                    onMouseEnter={() => prefetchMedia(item)}
-                    onInspectApi={(e) => {
-                      e.stopPropagation();
-                      setApiDocsInitialUrl(item.url);
-                      setIsApiDocsOpen(true);
-                    }}
-                    progress={watchProgress[item.url]}
-                  />
-                ))}
+              <div className="flex flex-col gap-8">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 sm:gap-6">
+                  {displayedHomeMedia.map((item, idx) => (
+                    <MediaCard
+                      key={`home-media-${item.url}-${idx}`}
+                      item={item}
+                      onClick={() => handleMediaClick(item)}
+                      onMouseEnter={() => prefetchMedia(item)}
+                      onInspectApi={(e) => {
+                        e.stopPropagation();
+                        setApiDocsInitialUrl(item.url);
+                        setIsApiDocsOpen(true);
+                      }}
+                      progress={watchProgress[item.url]}
+                      isWatchLater={watchLater.some(m => m.url === item.url)}
+                      onToggleWatchLater={(e) => toggleWatchLater(item, e)}
+                    />
+                  ))}
+                </div>
+                
+                {displayedHomeMedia.length > 0 && activeCategoryFilter === 'all' && activeNavTab !== 'watch_later' && (
+                  <div className="flex justify-center pb-8">
+                    <button
+                      onClick={handleLoadMore}
+                      disabled={isLoadingMore}
+                      className="flex items-center gap-2 px-8 py-3 rounded-xl bg-gray-800/80 hover:bg-gray-700 text-white text-sm font-bold border border-gray-700 transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0"
+                    >
+                      {isLoadingMore ? (
+                        <>
+                          <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                          <span>جاري التحميل...</span>
+                        </>
+                      ) : (
+                        <>
+                          <RefreshCw className="w-4 h-4" />
+                          <span>تحميل المزيد</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -897,13 +1010,17 @@ function MediaCard({
   onClick,
   onMouseEnter,
   onInspectApi,
-  progress
+  progress,
+  isWatchLater,
+  onToggleWatchLater
 }: {
   item: MediaItem;
   onClick: () => void;
   onMouseEnter: () => void;
   onInspectApi?: (e: React.MouseEvent) => void;
   progress?: number;
+  isWatchLater?: boolean;
+  onToggleWatchLater?: (e: React.MouseEvent) => void;
 }) {
   const isSeries = item.url.includes('/series/') || item.url.includes('series');
 
@@ -949,6 +1066,16 @@ function MediaCard({
           </span>
 
           <div className="flex items-center gap-1">
+            {onToggleWatchLater && (
+              <button
+                type="button"
+                onClick={onToggleWatchLater}
+                className="opacity-0 group-hover:opacity-100 transition-opacity px-1.5 py-1 rounded bg-black/70 hover:bg-black text-white hover:text-blue-400 border border-gray-500/40"
+                title={isWatchLater ? 'إزالة من المشاهدة لاحقاً' : 'إضافة إلى المشاهدة لاحقاً'}
+              >
+                {isWatchLater ? <BookmarkCheck className="w-3.5 h-3.5 text-blue-400" /> : <Bookmark className="w-3.5 h-3.5" />}
+              </button>
+            )}
             {onInspectApi && (
               <button
                 type="button"
