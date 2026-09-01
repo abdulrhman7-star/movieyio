@@ -51,6 +51,7 @@ interface PlayerSectionProps {
   onEmbedClick?: () => void;
   onRefreshLink?: () => void;
   isRefreshing?: boolean;
+  onProgressUpdate?: (percentage: number) => void;
 }
 
 function srtToVtt(srtText: string): string {
@@ -70,6 +71,7 @@ export default function PlayerSection({
   onEmbedClick,
   onRefreshLink,
   isRefreshing = false,
+  onProgressUpdate,
 }: PlayerSectionProps) {
   const [selectedQualityIdx, setSelectedQualityIdx] = useState<number>(initialQualityIdx);
   const [streamMode, setStreamMode] = useState<'direct' | 'proxy'>(initialMode);
@@ -244,6 +246,16 @@ export default function PlayerSection({
   }, [streamMode, hasAutoSwitchedToProxy]);
 
   // Subtitle track management
+  const lastReportedTime = useRef(0);
+  useEffect(() => {
+    if (duration > 0 && onProgressUpdate) {
+      if (Math.abs(currentTime - lastReportedTime.current) > 5 || currentTime === duration) {
+        lastReportedTime.current = currentTime;
+        onProgressUpdate((currentTime / duration) * 100);
+      }
+    }
+  }, [currentTime, duration, onProgressUpdate]);
+
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;

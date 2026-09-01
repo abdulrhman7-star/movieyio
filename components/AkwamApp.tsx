@@ -66,6 +66,37 @@ export default function AkwamApp() {
   const [isApiDocsOpen, setIsApiDocsOpen] = useState<boolean>(false);
   const [apiDocsInitialUrl, setApiDocsInitialUrl] = useState<string>('');
   const [apiDocsInitialQuery, setApiDocsInitialQuery] = useState<string>('');
+  
+  // Watch Progress State
+  const [watchProgress, setWatchProgress] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('ak_watch_progress');
+      if (saved) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setWatchProgress(JSON.parse(saved));
+      }
+    } catch (e) {}
+  }, []);
+
+  const handleProgressUpdate = (percentage: number) => {
+    if (percentage < 1 || percentage > 100) return;
+    const currentMediaUrl = currentMedia?.url;
+    const targetUrl = currentEpisodeUrl;
+
+    setWatchProgress(prev => {
+      const next = { ...prev };
+      if (targetUrl) next[targetUrl] = percentage;
+      if (currentMediaUrl && currentMediaUrl !== targetUrl) {
+        next[currentMediaUrl] = percentage; // Update series progress to latest watched episode
+      }
+      try {
+        localStorage.setItem('ak_watch_progress', JSON.stringify(next));
+      } catch (e) {}
+      return next;
+    });
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -480,6 +511,7 @@ export default function AkwamApp() {
                   }}
                   onRefreshLink={handleRefreshToken}
                   isRefreshing={isRefreshing}
+                  onProgressUpdate={handleProgressUpdate}
                 />
 
                 {/* Media Details & Story Section */}
@@ -560,6 +592,7 @@ export default function AkwamApp() {
                     currentEpisodeUrl={currentEpisodeUrl}
                     seriesTitle={currentMedia?.title || 'حلقات المسلسل'}
                     onSelectEpisode={(ep) => playMediaUrl(ep.url, ep)}
+                    watchProgress={watchProgress}
                   />
                 </div>
               )}
@@ -699,6 +732,7 @@ export default function AkwamApp() {
                       setApiDocsInitialUrl(item.url);
                       setIsApiDocsOpen(true);
                     }}
+                    progress={watchProgress[item.url]}
                   />
                 ))}
               </div>
@@ -829,6 +863,7 @@ export default function AkwamApp() {
                       setApiDocsInitialUrl(item.url);
                       setIsApiDocsOpen(true);
                     }}
+                    progress={watchProgress[item.url]}
                   />
                 ))}
               </div>
@@ -861,12 +896,14 @@ function MediaCard({
   item,
   onClick,
   onMouseEnter,
-  onInspectApi
+  onInspectApi,
+  progress
 }: {
   item: MediaItem;
   onClick: () => void;
   onMouseEnter: () => void;
   onInspectApi?: (e: React.MouseEvent) => void;
+  progress?: number;
 }) {
   const isSeries = item.url.includes('/series/') || item.url.includes('series');
 
@@ -943,6 +980,16 @@ function MediaCard({
           <div className="absolute bottom-2.5 left-2.5 z-10 flex items-center gap-1 bg-black/80 backdrop-blur-md px-2 py-0.5 rounded-md text-amber-300 border border-amber-400/30 text-[10px] font-bold">
             <Star className="w-3 h-3 fill-amber-400" />
             <span>{item.rating}</span>
+          </div>
+        )}
+        
+        {/* Progress Bar Overlay */}
+        {progress !== undefined && progress > 0 && (
+          <div className="absolute bottom-0 left-0 right-0 h-1 bg-gray-900/80 z-20 overflow-hidden">
+            <div 
+              className="h-full bg-blue-500 transition-all duration-500 rounded-r-full shadow-[0_0_8px_rgba(59,130,246,0.8)]"
+              style={{ width: `${Math.min(progress, 100)}%` }}
+            />
           </div>
         )}
       </div>

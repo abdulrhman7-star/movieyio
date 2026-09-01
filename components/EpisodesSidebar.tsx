@@ -9,6 +9,7 @@ interface EpisodesSidebarProps {
   currentEpisodeUrl?: string;
   onSelectEpisode: (episode: MediaItem) => void;
   seriesTitle?: string;
+  watchProgress?: Record<string, number>;
 }
 
 export default function EpisodesSidebar({
@@ -16,6 +17,7 @@ export default function EpisodesSidebar({
   currentEpisodeUrl,
   onSelectEpisode,
   seriesTitle = 'حلقات المسلسل',
+  watchProgress = {},
 }: EpisodesSidebarProps) {
   const [filterText, setFilterText] = useState<string>('');
   const [selectedRange, setSelectedRange] = useState<string>('all');
@@ -182,7 +184,7 @@ export default function EpisodesSidebar({
                   </div>
 
                   {/* Title & metadata */}
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <h4
                       className={`text-xs font-semibold truncate transition-colors ${
                         isCurrent ? 'text-blue-300 font-bold' : 'text-gray-200 group-hover:text-white'
@@ -194,6 +196,15 @@ export default function EpisodesSidebar({
                       <span className="text-[10px] text-gray-400 font-mono">
                         {ep.quality}
                       </span>
+                    )}
+                    {/* Progress Bar for Episode */}
+                    {watchProgress[ep.url] !== undefined && watchProgress[ep.url] > 0 && (
+                      <div className="mt-1 w-24 h-1 bg-gray-900 rounded-full overflow-hidden">
+                        <div 
+                          className="h-full bg-blue-500 rounded-full"
+                          style={{ width: `${Math.min(watchProgress[ep.url], 100)}%` }}
+                        />
+                      </div>
                     )}
                   </div>
                 </div>
